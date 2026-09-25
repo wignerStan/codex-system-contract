@@ -129,6 +129,34 @@ The architectural purpose is latency hiding and fast-path preparation, not
 conversation persistence. Durable/reconstructible history remains a separate
 layer.
 
+
+## Routing cookies belong to the opening handshake
+
+ChatGPT infrastructure cookies such as routing-affinity cookies are transport setup
+state rather than WebSocket frame state. On revisions with the shared cookie bridge,
+Codex may learn an allowlisted cookie from an HTTPS response or a WebSocket opening
+handshake and replay it on a later matching HTTPS/WSS request.
+
+For WSS, both directions are ordinary HTTP headers before the protocol switches:
+
+```text
+GET ... Upgrade: websocket
+Cookie: <routing affinity, if already known>
+        ↓
+101 Switching Protocols
+Set-Cookie: <routing affinity, if supplied upstream>
+        ↓
+WebSocket data frames
+```
+
+A cookie returned with the successful upgrade cannot change the routing of that
+already-established socket; it only affects later matching requests/reconnects.
+Codex does not assign a fixed routing-cookie TTL here; expiry remains an upstream
+`Set-Cookie` attribute interpreted by the shared cookie jar.
+The runtime contract is revision-sensitive because older Codex revisions had the
+HTTP cookie jar without the WebSocket handshake bridge.
+
+
 ## Failure should fall back toward reconstructible state
 
 A useful invariant is:

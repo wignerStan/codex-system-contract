@@ -12,7 +12,7 @@ The enforced scope now includes both the installable package and the release scr
 | Maximum module fan-out | not measured | 10 | 8 | 10 |
 | Internal import cycles | not measured | 0 | 0 | 0 |
 
-Largest combined module: **`codex_wire_audit/extractors/responses_protocol.py`** (595 lines). Largest combined function: **`build_history_mutation`** (200 lines).
+Largest combined module: **`codex_wire_audit/extractors/responses_protocol.py`** (592 lines). Largest combined function: **`build_history_mutation`** (200 lines).
 
 ## Generated maintenance assets
 - Source registry entries: **164** (16 required, 148 optional).

@@ -15,16 +15,9 @@ from ..diagnostics import DiagnosticCollector
 from ..models import SourceFile, SourceSnapshot
 from .registry import ExtractorResult, register_extractor
 from .responses_transport import (
-    COOKIE_STORE,
-    DEFAULT_CLIENT,
-    HTTP_CLIENT,
-    PROVIDER,
-    RETRY,
-    SESSION,
-    STARTUP,
-    build_transport_lifecycle,
-    classify_http_response_diagnostics,
-    validate_transport_sources,
+    COOKIE_STORE, DEFAULT_CLIENT, HTTP_CLIENT, PROVIDER, RETRY, SESSION, STARTUP, WSS_CLIENT,
+    build_transport_lifecycle, classify_http_response_diagnostics,
+    classify_websocket_cookie_affinity, validate_transport_sources,
 )
 
 REQUEST_ID = "extractor.responses_request"
@@ -177,7 +170,7 @@ class ResponsesRequestExtractor:
     extractor_id = REQUEST_ID
     source_spec_ids = (
         COMMON, CORE, HTTP, WS, STARTUP, SESSION, RETRY, PROVIDER,
-        HTTP_CLIENT, DEFAULT_CLIENT, COOKIE_STORE,
+        HTTP_CLIENT, DEFAULT_CLIENT, COOKIE_STORE, WSS_CLIENT,
     )
 
     def extract(self, snapshot: SourceSnapshot, diagnostics: DiagnosticCollector) -> ExtractorResult:
@@ -286,6 +279,8 @@ class ResponsesRequestExtractor:
             cookie_store=sources[COOKIE_STORE],
         )
         complete &= diagnostics_complete
+        cookie_complete, websocket_cookie_affinity = classify_websocket_cookie_affinity(diagnostics=diagnostics, extractor_id=REQUEST_ID, websocket_client=sources[WSS_CLIENT], cookie_store=sources[COOKIE_STORE])
+        complete &= cookie_complete
 
         http_fields = _struct_fields(common.text, "ResponsesApiRequest")
         ws_fields = _struct_fields(common.text, "ResponseCreateWsRequest")
@@ -357,6 +352,7 @@ class ResponsesRequestExtractor:
                 "body": "ResponseCreateWsRequest serialized as one WebSocket request frame",
                 "connection": "provider WebSocket URL uses the same /responses path and maps http->ws, https->wss",
                 "continuation_fields": ["previous_response_id", "generate", "client_metadata"],
+                "cookie_affinity": websocket_cookie_affinity,
             },
             "transport_lifecycle": build_transport_lifecycle(
                 prewarm_before_history_restore=prewarm_before_history_restore
@@ -373,6 +369,7 @@ class ResponsesRequestExtractor:
                 "http_client": _evidence(sources[HTTP_CLIENT], "HttpClient::log_response/RequestBuilder::send"),
                 "default_client": _evidence(sources[DEFAULT_CLIENT], "create_client_for_route/default_http_client_builder"),
                 "cookie_store": _evidence(sources[COOKIE_STORE], "ChatGptCloudflareCookieStore"),
+                "websocket_client": _evidence(sources[WSS_CLIENT], "WebSocketConnector::connect_with_route"),
             },
         }
         return _result(REQUEST_ID, self.source_spec_ids, body, complete, REQUEST_SCHEMA_VERSION)

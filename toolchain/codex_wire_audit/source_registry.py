@@ -279,6 +279,7 @@ _RESPONSES_REQUEST_SPECS = (
     ("source_spec.base.default_client", "default_client", "codex-rs/login/src/auth/default_client.rs", ("create_client_for_route", "default_http_client_builder", "without_request_logging")),
     ("source_spec.extra.responses_http_client", "responses_http_client", "codex-rs/http-client/src/client.rs", ("RequestLogging", "log_response", "response.headers")),
     ("source_spec.extra.responses_chatgpt_cookie_store", "responses_chatgpt_cookie_store", "codex-rs/http-client/src/chatgpt_cloudflare_cookies.rs", ("is_chatgpt_cookie_url", "is_allowed_cloudflare_set_cookie_header", "CookieStore")),
+    ("source_spec.extra.responses_websocket_client", "responses_websocket_client", "codex-rs/websocket-client/src/lib.rs", ("WebSocketConnector", "connect_with_route")),
     ("source_spec.extra.responses_transport_startup", "responses_transport_startup", "codex-rs/core/src/session_startup_prewarm.rs", ("schedule_startup_prewarm", "CodexResponsesRequestKind::Prewarm", "prewarm_websocket")),
     ("source_spec.extra.responses_transport_session", "responses_transport_session", "codex-rs/core/src/session/session.rs", ("schedule_startup_prewarm", "record_initial_history")),
     ("source_spec.extra.responses_transport_retry", "responses_transport_retry", "codex-rs/core/src/responses_retry.rs", ("try_switch_fallback_transport", "Falling back from WebSockets to HTTPS transport", "retry_state")),

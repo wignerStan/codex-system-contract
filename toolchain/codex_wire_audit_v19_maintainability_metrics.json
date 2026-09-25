@@ -21,6 +21,13 @@
         "start_line": 148
       },
       {
+        "cyclomatic_complexity": 16,
+        "file": "codex_wire_audit/extractors/responses_protocol.py",
+        "line_count": 200,
+        "qualified_name": "ResponsesRequestExtractor.extract",
+        "start_line": 176
+      },
+      {
         "cyclomatic_complexity": 14,
         "file": "codex_wire_audit/extractors/local_storage.py",
         "line_count": 199,
@@ -33,13 +40,6 @@
         "line_count": 199,
         "qualified_name": "build_attestation",
         "start_line": 120
-      },
-      {
-        "cyclomatic_complexity": 16,
-        "file": "codex_wire_audit/extractors/responses_protocol.py",
-        "line_count": 196,
-        "qualified_name": "ResponsesRequestExtractor.extract",
-        "start_line": 183
       },
       {
         "cyclomatic_complexity": 21,
@@ -158,12 +158,12 @@
     ],
     "largest_module": {
       "file": "codex_wire_audit/extractors/responses_protocol.py",
-      "line_count": 595
+      "line_count": 592
     },
     "largest_modules": [
       {
         "file": "codex_wire_audit/extractors/responses_protocol.py",
-        "line_count": 595
+        "line_count": 592
       },
       {
         "file": "codex_wire_audit/metadata_history.py",
@@ -238,6 +238,13 @@
         "start_line": 148
       },
       {
+        "cyclomatic_complexity": 16,
+        "file": "codex_wire_audit/extractors/responses_protocol.py",
+        "line_count": 200,
+        "qualified_name": "ResponsesRequestExtractor.extract",
+        "start_line": 176
+      },
+      {
         "cyclomatic_complexity": 14,
         "file": "codex_wire_audit/extractors/local_storage.py",
         "line_count": 199,
@@ -250,13 +257,6 @@
         "line_count": 199,
         "qualified_name": "build_attestation",
         "start_line": 120
-      },
-      {
-        "cyclomatic_complexity": 16,
-        "file": "codex_wire_audit/extractors/responses_protocol.py",
-        "line_count": 196,
-        "qualified_name": "ResponsesRequestExtractor.extract",
-        "start_line": 183
       },
       {
         "cyclomatic_complexity": 21,
@@ -375,12 +375,12 @@
     ],
     "largest_module": {
       "file": "codex_wire_audit/extractors/responses_protocol.py",
-      "line_count": 595
+      "line_count": 592
     },
     "largest_modules": [
       {
         "file": "codex_wire_audit/extractors/responses_protocol.py",
-        "line_count": 595
+        "line_count": 592
       },
       {
         "file": "codex_wire_audit/metadata_history.py",
@@ -656,7 +656,7 @@
     "active_functions_over_200": 0,
     "active_modules_over_600": 0,
     "largest_function_line_reduction_percent": 84.1,
-    "largest_module_line_reduction_percent": 88.1,
+    "largest_module_line_reduction_percent": 88.2,
     "v10_functions_over_200": 16,
     "v10_modules_over_600": 3
   },

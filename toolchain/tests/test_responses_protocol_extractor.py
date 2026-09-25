@@ -27,7 +27,7 @@ def _file(spec_id: str, key: str, path: str, text: str) -> SourceFile:
     return SourceFile.create(spec=spec, selected_path=path, raw_bytes=text.encode())
 
 
-def _snapshot(*, omit: str | None = None, break_events: bool = False) -> SourceSnapshot:
+def _snapshot(*, omit: str | None = None, break_events: bool = False, legacy_ws_cookie: bool = False) -> SourceSnapshot:
     common = '''
 pub enum ResponseEvent {
     Created { response_id: Option<String> },
@@ -200,13 +200,61 @@ fn default_http_client_builder() -> HttpClientBuilder {
 }
 """
     cookie_store = """
+static SHARED_CHATGPT_CLOUDFLARE_COOKIE_STORE: Shared = Shared;
 impl CookieStore for ChatGptCloudflareCookieStore {
     fn set_cookies() {
         cookie_headers.filter(|header| is_allowed_cloudflare_set_cookie_header(header));
+        self.jar.set_cookies(cookie_headers, url);
+    }
+}
+pub fn chatgpt_cookie_header() {}
+pub fn store_chatgpt_response_cookies() {}
+fn chatgpt_cookie_url() {
+    if url.scheme() == "wss" { url.set_scheme("https"); }
+}
+fn is_allowed_cloudflare_set_cookie_header() {}
+fn is_chatgpt_cookie_url() {}
+fn is_allowed_cloudflare_cookie_name(name: &str) {
+    matches!(name, "__oailb" | "__cflb")
+}
+"""
+    websocket_client = """
+pub struct WebSocketConnector;
+impl WebSocketConnector {
+    async fn connect_with_route(&self, mut request: Request) {
+        if !request.headers().contains_key(COOKIE)
+            && let Some(cookies) = self.http_client_factory.chatgpt_cookie_header(&uri)
+        {
+            request.headers_mut().insert(COOKIE, cookies);
+        }
+        let result = dialer::connect();
+        match &result {
+            Ok((_, response)) => self.http_client_factory.store_chatgpt_response_cookies(&uri, response.headers()),
+            Err(WebSocketError::Http(response)) => self.http_client_factory.store_chatgpt_response_cookies(&uri, response.headers()),
+            Err(_) => {}
+        }
+    }
+}
+"""
+    if legacy_ws_cookie:
+        cookie_store = """
+static SHARED_CHATGPT_CLOUDFLARE_COOKIE_STORE: Shared = Shared;
+impl CookieStore for ChatGptCloudflareCookieStore {
+    fn set_cookies() {
+        cookie_headers.filter(|header| is_allowed_cloudflare_set_cookie_header(header));
+        self.jar.set_cookies(cookie_headers, url);
     }
 }
 fn is_allowed_cloudflare_set_cookie_header() {}
 fn is_chatgpt_cookie_url() {}
+"""
+        websocket_client = """
+pub struct WebSocketConnector;
+impl WebSocketConnector {
+    async fn connect_with_route(&self, request: Request) {
+        let result = dialer::connect();
+    }
+}
 """
     rows = {
         "common": _file("source_spec.base.common", "common", "codex-rs/codex-api/src/common.rs", common),
@@ -221,6 +269,7 @@ fn is_chatgpt_cookie_url() {}
         "http_client": _file("source_spec.extra.responses_http_client", "responses_http_client", "codex-rs/http-client/src/client.rs", http_client),
         "default_client": _file("source_spec.base.default_client", "default_client", "codex-rs/login/src/auth/default_client.rs", default_client),
         "cookie_store": _file("source_spec.extra.responses_chatgpt_cookie_store", "responses_chatgpt_cookie_store", "codex-rs/http-client/src/chatgpt_cloudflare_cookies.rs", cookie_store),
+        "websocket_client": _file("source_spec.extra.responses_websocket_client", "responses_websocket_client", "codex-rs/websocket-client/src/lib.rs", websocket_client),
     }
     if omit:
         rows.pop(omit)
@@ -245,6 +294,7 @@ def test_default_registry_assigns_responses_sources_to_native_domain():
         "source_spec.extra.responses_transport_retry", "source_spec.extra.responses_transport_provider",
         "source_spec.extra.responses_http_client", "source_spec.base.default_client",
         "source_spec.extra.responses_chatgpt_cookie_store",
+        "source_spec.extra.responses_websocket_client",
     }
     assert by_extractor["extractor.responses_lite"] == {"source_spec.base.core"}
     assert by_extractor["extractor.response_events"] == {
@@ -273,7 +323,60 @@ def test_request_extractor_parses_exact_wire_field_inventory():
     assert http_diagnostics["https_set_cookie_diagnostic_exposure"] is True
     assert http_diagnostics["chatgpt_cookie_persistence_allowlisted"] is True
     assert http_diagnostics["cookie_store_filtering_sanitizes_diagnostics"] is False
+    cookie_affinity = result.data["websocket_transport"]["cookie_affinity"]
+    assert cookie_affinity["revision_mode"] == "shared_http_wss_opening_handshake_cookie_jar"
+    assert cookie_affinity["request_cookie_injected_before_upgrade"] is True
+    assert cookie_affinity["successful_upgrade_set_cookie_captured"] is True
+    assert cookie_affinity["rejected_upgrade_set_cookie_captured"] is True
+    assert cookie_affinity["wss_cookie_scope_mapped_to_https"] is True
+    assert cookie_affinity["oailb_routing_cookie_allowlisted"] is True
+    assert cookie_affinity["expiry"]["codex_fixed_ttl_seconds"] is None
+    assert cookie_affinity["expiry"]["jar_delegation_observed"] is True
+    assert "opening HTTP Upgrade handshake" in cookie_affinity["post_upgrade_scope"]
     assert "RESPONSES_HTTP_SET_COOKIE_DIAGNOSTIC_EXPOSURE" in {item.code for item in diagnostics.values()}
+
+
+
+def test_legacy_websocket_revision_reports_http_only_cookie_jar() -> None:
+    diagnostics = DiagnosticCollector()
+    result = ResponsesRequestExtractor().extract(
+        _snapshot(legacy_ws_cookie=True),
+        diagnostics,
+    )
+    assert result.semantic_complete
+    cookie_affinity = result.data["websocket_transport"]["cookie_affinity"]
+    assert cookie_affinity["revision_mode"] == "legacy_http_cookie_jar_without_websocket_bridge"
+    assert cookie_affinity["request_cookie_injected_before_upgrade"] is False
+    assert cookie_affinity["successful_upgrade_set_cookie_captured"] is False
+    assert cookie_affinity["rejected_upgrade_set_cookie_captured"] is False
+    assert cookie_affinity["oailb_routing_cookie_allowlisted"] is False
+    assert cookie_affinity["expiry"]["jar_delegation_observed"] is True
+    assert "RESPONSES_WS_COOKIE_BRIDGE_PARTIAL_DRIFT" not in {
+        item.code for item in diagnostics.values()
+    }
+
+
+def test_partial_websocket_cookie_bridge_fails_closed() -> None:
+    snapshot = _snapshot()
+    source = snapshot.files["source_spec.extra.responses_websocket_client"]
+    broken = source.text.replace(
+        "Err(WebSocketError::Http(response))",
+        "Err(WebSocketError::Protocol(_))",
+    )
+    files = dict(snapshot.files)
+    files[source.spec_id] = _file(
+        source.spec_id,
+        "responses_websocket_client",
+        source.selected_path,
+        broken,
+    )
+    drifted = SourceSnapshot(snapshot.revision, files)
+    diagnostics = DiagnosticCollector()
+    result = ResponsesRequestExtractor().extract(drifted, diagnostics)
+    assert result.semantic_complete is False
+    assert "RESPONSES_WS_COOKIE_BRIDGE_PARTIAL_DRIFT" in {
+        item.code for item in diagnostics.values()
+    }
 
 
 def test_lite_extractor_owns_transformation_not_prompt_composition():
@@ -350,6 +453,7 @@ def test_transport_source_identity_is_exact() -> None:
     assert registry.get("source_spec.extra.responses_http_client").primary_path == "codex-rs/http-client/src/client.rs"
     assert registry.get("source_spec.base.default_client").primary_path == "codex-rs/login/src/auth/default_client.rs"
     assert registry.get("source_spec.extra.responses_chatgpt_cookie_store").primary_path == "codex-rs/http-client/src/chatgpt_cloudflare_cookies.rs"
+    assert registry.get("source_spec.extra.responses_websocket_client").primary_path == "codex-rs/websocket-client/src/lib.rs"
 
 
 def test_raw_response_header_diagnostic_drift_fails_closed() -> None:

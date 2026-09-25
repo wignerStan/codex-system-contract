@@ -13,6 +13,7 @@ PROVIDER = "source_spec.extra.responses_transport_provider"
 HTTP_CLIENT = "source_spec.extra.responses_http_client"
 DEFAULT_CLIENT = "source_spec.base.default_client"
 COOKIE_STORE = "source_spec.extra.responses_chatgpt_cookie_store"
+WSS_CLIENT = "source_spec.extra.responses_websocket_client"
 
 
 def _require(
@@ -232,6 +233,110 @@ def classify_http_response_diagnostics(
             "cookie persistence and cookie diagnostics are separate: rejecting a Set-Cookie from "
             "the shared jar does not remove it from the response HeaderMap rendered by diagnostics"
         ),
+    }
+
+
+def classify_websocket_cookie_affinity(
+    *,
+    diagnostics: DiagnosticCollector,
+    extractor_id: str,
+    websocket_client: SourceFile,
+    cookie_store: SourceFile,
+) -> tuple[bool, dict[str, Any]]:
+    """Classify revision-sensitive ChatGPT routing-cookie behavior around the WS handshake."""
+
+    # Cookie and Set-Cookie are HTTP Upgrade handshake headers; they are not WebSocket data frames.
+    websocket_tokens = (
+        "!request.headers().contains_key(COOKIE)",
+        "chatgpt_cookie_header(&uri)",
+        "store_chatgpt_response_cookies(&uri, response.headers())",
+        "Ok((_, response))",
+        "Err(WebSocketError::Http(response))",
+    )
+    cookie_store_tokens = (
+        "pub fn chatgpt_cookie_header",
+        "pub fn store_chatgpt_response_cookies",
+        'if url.scheme() == "wss"',
+    )
+    websocket_hits = tuple(token in websocket_client.text for token in websocket_tokens)
+    cookie_store_hits = tuple(token in cookie_store.text for token in cookie_store_tokens)
+    bridge_observed = all(websocket_hits) and all(cookie_store_hits)
+    partial_bridge = (
+        (any(websocket_hits) and not all(websocket_hits))
+        or (any(cookie_store_hits) and not all(cookie_store_hits))
+    )
+    complete = not partial_bridge
+    if partial_bridge:
+        diagnostics.emit(
+            code="RESPONSES_WS_COOKIE_BRIDGE_PARTIAL_DRIFT",
+            severity="error",
+            category="responses_request",
+            message=(
+                "WebSocket ChatGPT cookie integration is partially present; the opening-handshake "
+                "request/response bridge no longer matches a known legacy or shared-jar revision."
+            ),
+            extractor_id=extractor_id,
+            entity_id="responses_request.websocket.cookie_affinity",
+            source_refs=[websocket_client.spec_id, cookie_store.spec_id],
+            details={
+                "websocket_client_path": websocket_client.selected_path,
+                "cookie_store_path": cookie_store.selected_path,
+                "websocket_markers": dict(zip(websocket_tokens, websocket_hits, strict=True)),
+                "cookie_store_markers": dict(zip(cookie_store_tokens, cookie_store_hits, strict=True)),
+            },
+            recoverable=False,
+            strict_failure=True,
+        )
+
+    jar_delegation = "self.jar.set_cookies" in cookie_store.text
+    return complete, {
+        "revision_mode": (
+            "shared_http_wss_opening_handshake_cookie_jar"
+            if bridge_observed
+            else "legacy_http_cookie_jar_without_websocket_bridge"
+        ),
+        "request_cookie_injected_before_upgrade": bridge_observed,
+        "explicit_request_cookie_takes_precedence": (
+            bridge_observed and "!request.headers().contains_key(COOKIE)" in websocket_client.text
+        ),
+        "successful_upgrade_set_cookie_captured": (
+            bridge_observed and "Ok((_, response))" in websocket_client.text
+        ),
+        "rejected_upgrade_set_cookie_captured": (
+            bridge_observed and "Err(WebSocketError::Http(response))" in websocket_client.text
+        ),
+        "wss_cookie_scope_mapped_to_https": (
+            bridge_observed and 'if url.scheme() == "wss"' in cookie_store.text
+        ),
+        "http_and_wss_share_process_cookie_store": bridge_observed,
+        "process_global_infrastructure_cookie_store": (
+            "SHARED_CHATGPT_CLOUDFLARE_COOKIE_STORE" in cookie_store.text
+        ),
+        "oailb_routing_cookie_allowlisted": '"__oailb"' in cookie_store.text,
+        "cookie_value_source": (
+            "upstream Set-Cookie; Codex stores and replays allowlisted infrastructure values"
+            if bridge_observed
+            else "HTTP cookie jar may learn upstream Set-Cookie values; no WebSocket bridge is observed"
+        ),
+        "first_wss_without_preexisting_cookie": (
+            "Codex inserts no Cookie header; injection occurs only when chatgpt_cookie_header returns Some"
+            if bridge_observed
+            else "no shared-cookie injection path is present in the WebSocket connector"
+        ),
+        "post_upgrade_scope": (
+            "cookie integration is confined to the opening HTTP Upgrade handshake; WebSocket data frames do not carry cookie headers"
+            if bridge_observed
+            else "no WebSocket cookie bridge is observed"
+        ),
+        "expiry": {
+            "codex_fixed_ttl_seconds": None,
+            "jar_delegation_observed": jar_delegation,
+            "owner": (
+                "upstream Set-Cookie attributes interpreted by reqwest::cookie::Jar"
+                if jar_delegation
+                else "not established"
+            ),
+        },
     }
 
 

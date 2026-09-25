@@ -2462,6 +2462,25 @@
         "responses_request"
       ]
     },
+    "source_spec.extra.responses_websocket_client": {
+      "expected_symbols": [
+        "WebSocketConnector",
+        "connect_with_route"
+      ],
+      "extractor_ids": [
+        "extractor.responses_request"
+      ],
+      "group": "extra",
+      "id": "source_spec.extra.responses_websocket_client",
+      "legacy_key": "responses_websocket_client",
+      "path_candidates": [
+        "codex-rs/websocket-client/src/lib.rs"
+      ],
+      "required": false,
+      "roles": [
+        "responses_request"
+      ]
+    },
     "source_spec.extra.rmcp_client": {
       "expected_symbols": [],
       "extractor_ids": [],
